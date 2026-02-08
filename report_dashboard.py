@@ -40,6 +40,8 @@ DECIMALS = 18
 ETHERSCAN_URL = "https://api.etherscan.io/v2/api"
 GOLDSKY_URL = "https://api.goldsky.com/api/public/project_cmgrrbljx1rpt01wnczmq0ayf/subgraphs/tge/0.0.2/gn"
 RPC_URL = "https://eth.llamarpc.com"
+BSC_RPC_URL = "https://bsc-dataseed.binance.org/"
+BSC_ENSO_CONTRACT = "0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef"
 COINGECKO_URL = "https://api.coingecko.com/api/v3"
 
 FOUNDATION_WALLETS = {
@@ -97,6 +99,22 @@ def get_token_balance(wallet: str, api_key: str) -> float:
     })
     if data and data.get("status") == "1":
         return int(data["result"]) / 10**DECIMALS
+    return 0.0
+
+
+def get_bsc_token_balance(wallet: str) -> float:
+    addr_padded = wallet.lower().replace("0x", "").zfill(64)
+    call_data = "0x70a08231" + addr_padded
+    body = {
+        "jsonrpc": "2.0", "id": 1, "method": "eth_call",
+        "params": [{"to": BSC_ENSO_CONTRACT, "data": call_data}, "latest"],
+    }
+    data = safe_post(BSC_RPC_URL, body)
+    if data and data.get("result") and data["result"] != "0x":
+        try:
+            return int(data["result"], 16) / 10**DECIMALS
+        except (ValueError, TypeError):
+            pass
     return 0.0
 
 
@@ -651,7 +669,7 @@ def get_perp_volume_lbank() -> dict | None:
 @st.cache_data(ttl=600, show_spinner=False)
 def load_holdings(api_key: str):
     """Fetch all foundation holdings from on-chain."""
-    results = {"liquid": 0, "vested_unclaimed": 0, "locked_vesting": 0,
+    results = {"liquid": 0, "liquid_bsc": 0, "vested_unclaimed": 0, "locked_vesting": 0,
                "staked_total": 0, "staked_expired": 0, "staked_locked": 0,
                "rewards": 0, "wallets": {}, "positions": []}
 
@@ -668,8 +686,11 @@ def load_holdings(api_key: str):
             }
         else:
             bal = get_token_balance(info["addr"], api_key)
+            bsc_bal = get_bsc_token_balance(info["addr"])
             results["liquid"] += bal
-            wallet_data = {"address": info["addr"], "type": "liquid", "balance": bal}
+            results["liquid_bsc"] += bsc_bal
+            wallet_data = {"address": info["addr"], "type": "liquid",
+                           "balance": bal, "bsc_balance": bsc_bal}
 
             if name == "treasury":
                 positions = get_staked_positions(info["addr"])
@@ -693,9 +714,11 @@ def load_holdings(api_key: str):
             results["wallets"][name] = wallet_data
         time.sleep(0.2)
 
-    results["total_sellable"] = (results["liquid"] + results["vested_unclaimed"]
+    results["total_sellable"] = (results["liquid"] + results["liquid_bsc"]
+                                  + results["vested_unclaimed"]
                                   + results["staked_expired"] + results["rewards"])
-    results["total_holdings"] = (results["liquid"] + results["vested_unclaimed"]
+    results["total_holdings"] = (results["liquid"] + results["liquid_bsc"]
+                                  + results["vested_unclaimed"]
                                   + results["locked_vesting"] + results["staked_total"]
                                   + results["rewards"])
     return results
@@ -834,7 +857,8 @@ with tabs[0]:
     with col1:
         st.markdown("#### Holdings Breakdown")
         breakdown = {
-            "Liquid (wallets)": holdings["liquid"],
+            "Liquid — ETH": holdings["liquid"],
+            "Liquid — BSC": holdings["liquid_bsc"],
             "Vested (claimable)": holdings["vested_unclaimed"],
             "Staked (expired)": holdings["staked_expired"],
             "Rewards (claimable)": holdings["rewards"],
@@ -857,7 +881,7 @@ with tabs[0]:
 
         st.markdown("---")
         st.markdown(f"**Total Sellable: {total_sellable_adj:,.0f} ENSO**")
-        st.caption("Sellable = Liquid + Vested + Staked Expired + Rewards")
+        st.caption("Sellable = Liquid (ETH + BSC) + Vested + Staked Expired + Rewards")
 
         # Binance obligation
         st.markdown("---")
@@ -893,13 +917,16 @@ with tabs[0]:
     for name, w in holdings["wallets"].items():
         row = {"Wallet": name.replace("_", " ").title(), "Address": short_addr(w["address"])}
         if w["type"] == "vesting":
+            row["ETH Balance"] = f"{w['balance']:,.0f}"
+            row["BSC Balance"] = ""
             row["Claimable"] = f"{w['vested_unclaimed']:,.0f}"
             row["Locked"] = f"{w['locked']:,.0f}"
-            row["Total Balance"] = f"{w['balance']:,.0f}"
         else:
+            bsc = w.get("bsc_balance", 0)
+            row["ETH Balance"] = f"{w['balance']:,.0f}"
+            row["BSC Balance"] = f"{bsc:,.0f}" if bsc > 0 else ""
             row["Claimable"] = ""
             row["Locked"] = ""
-            row["Total Balance"] = f"{w['balance']:,.0f}"
         wallet_rows.append(row)
     st.dataframe(pd.DataFrame(wallet_rows), use_container_width=True, hide_index=True)
 
