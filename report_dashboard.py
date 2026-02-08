@@ -769,11 +769,17 @@ with st.sidebar:
 
     st.divider()
     st.markdown("**Market Makers Holdings**")
-    mm_holdings = st.number_input(
-        "ENSO held by Market Makers",
+    mm_amber = st.number_input(
+        "Amber",
         min_value=0, value=0, step=10000,
-        help="Manually enter total ENSO tokens held by market makers. Added to Foundation totals.",
+        help="ENSO tokens held by Amber. Added to Foundation totals.",
     )
+    mm_jpeg = st.number_input(
+        "Jpeg",
+        min_value=0, value=0, step=10000,
+        help="ENSO tokens held by Jpeg. Added to Foundation totals.",
+    )
+    mm_holdings = mm_amber + mm_jpeg
 
     st.divider()
     refresh = st.button("🔄 Refresh all data", use_container_width=True)
@@ -835,7 +841,8 @@ with tabs[0]:
             "Vested (claimable)": holdings["vested_unclaimed"],
             "Staked (expired)": holdings["staked_expired"],
             "Rewards (claimable)": holdings["rewards"],
-            "Market Makers": mm_holdings,
+            "MM — Amber": mm_amber,
+            "MM — Jpeg": mm_jpeg,
             "Staked (locked)": holdings["staked_locked"],
             "Locked (unvested)": holdings["locked_vesting"],
         }
@@ -853,7 +860,7 @@ with tabs[0]:
 
         st.markdown("---")
         st.markdown(f"**Total Sellable: {total_sellable_adj:,.0f} ENSO**")
-        st.caption("Sellable = Liquid + Vested + Staked Expired + Rewards + Market Makers")
+        st.caption("Sellable = Liquid + Vested + Staked Expired + Rewards + MM (Amber + Jpeg)")
 
         # Binance obligation
         st.markdown("---")
