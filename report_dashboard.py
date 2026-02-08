@@ -1,7 +1,7 @@
 """
 ENSO Foundation Report Dashboard
 =================================
-Live Streamlit dashboard replicating the biweekly R report.
+Live Streamlit dashboard replicating the R report.
 Fetches all data from public APIs on each visit (cached 10 min).
 
 Sections:
@@ -745,7 +745,7 @@ def load_perp_volumes():
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("ENSO Foundation Report")
-    st.caption("Live biweekly report")
+    st.caption("Live report")
     st.divider()
 
     try:
@@ -801,7 +801,7 @@ total_holdings_adj = holdings["total_holdings"] + mm_holdings
 total_sellable_adj = holdings["total_sellable"]
 
 # ── Header ───────────────────────────────────────────────────────────────────
-st.markdown("## ENSO Foundation Biweekly Report")
+st.markdown("## ENSO Foundation Report")
 st.caption(f"Generated {now_dt.strftime('%B %d, %Y at %H:%M UTC')}"
            + (f" · ENSO Price: **${enso_price:.4f}**" if enso_price else ""))
 
