@@ -51,9 +51,6 @@ FOUNDATION_WALLETS = {
     "vesting_operational_3": {"addr": "0xa3314896ae22caf4bfdcb0bd4c3cabce324d8f3e", "type": "vesting"},
 }
 
-WEEKLY_SELL_TARGET = 50_000
-MAX_MARKET_IMPACT_PCT = 0.05
-WEEKS_AHEAD = 8
 BINANCE_OBLIGATION = 1_750_000
 BINANCE_DUE_DATE = "2026-03-27"
 
@@ -827,7 +824,7 @@ st.divider()
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
     "🏦 Treasury Holdings", "📜 Vesting Detail", "🔒 Staked Positions",
-    "📊 Spot Volumes", "📈 Perp Volumes", "💼 Selling Plan",
+    "📊 Spot Volumes", "📈 Perp Volumes",
 ])
 
 # ═══════════════ TAB 1: Treasury Holdings ═══════════════════════════════════
@@ -889,8 +886,6 @@ with tabs[0]:
             st.markdown("#### Supply Context")
             st.markdown(f"- Circulating: **{supply['circulating']:,.0f}** ENSO")
             st.markdown(f"- Total Supply: **{supply['total']:,.0f}** ENSO")
-            pct = total_holdings_adj / supply["circulating"] * 100
-            st.markdown(f"- Foundation holds **{pct:.1f}%** of circulating")
 
     # Wallet breakdown
     st.markdown("#### Wallet Breakdown")
@@ -1068,53 +1063,6 @@ with tabs[4]:
         st.plotly_chart(fig_perp, use_container_width=True)
 
         st.metric("Total Avg Daily Perp Volume", f"${total_perp_daily:,.0f}")
-
-# ═══════════════ TAB 6: Selling Plan ════════════════════════════════════════
-with tabs[5]:
-    st.markdown("#### Token Selling Plan")
-
-    sc1, sc2, sc3 = st.columns(3)
-    sc1.metric("Weekly Sell Target", f"{WEEKLY_SELL_TARGET:,.0f} ENSO")
-    if total_spot_daily > 0:
-        daily_limit = total_spot_daily * MAX_MARKET_IMPACT_PCT
-        weekly_limit = daily_limit * 7
-        sc2.metric("Weekly Limit (5% impact)", f"${weekly_limit:,.0f}")
-        if enso_price and enso_price > 0:
-            sc3.metric("Weekly Limit (ENSO)", f"{weekly_limit / enso_price:,.0f}")
-
-    # Generate plan
-    remaining = total_sellable_adj
-    plan_rows = []
-    for w in range(1, WEEKS_AHEAD + 1):
-        sell = min(WEEKLY_SELL_TARGET, remaining) if remaining > 0 else 0
-        remaining -= sell
-        plan_rows.append({
-            "Week": w,
-            "Week Start": (now_dt.date() + timedelta(weeks=w - 1)).strftime("%Y-%m-%d"),
-            "Sell Amount": f"{sell:,.0f}",
-            "Remaining": f"{remaining:,.0f}",
-            "Note": "Regular" if sell == WEEKLY_SELL_TARGET else (
-                "Final (partial)" if sell > 0 else "Depleted"),
-        })
-    st.dataframe(pd.DataFrame(plan_rows), use_container_width=True, hide_index=True)
-
-    if total_spot_daily > 0:
-        st.markdown("#### Market Impact Analysis")
-        st.markdown(f"- Average daily spot volume: **${total_spot_daily:,.0f}**")
-        st.markdown(f"- Max 5% daily impact: **${total_spot_daily * 0.05:,.0f}**")
-        if enso_price and enso_price > 0:
-            daily_enso_limit = total_spot_daily * 0.05 / enso_price
-            st.markdown(f"- Daily sell limit: **{daily_enso_limit:,.0f} ENSO**")
-            st.markdown(f"- Weekly sell limit: **{daily_enso_limit * 7:,.0f} ENSO**")
-
-    st.markdown("#### Execution Notes")
-    st.markdown("""
-    - Execute sales gradually throughout each week
-    - Split large orders across multiple exchanges
-    - Monitor market depth before executing
-    - Avoid selling during low liquidity periods
-    - Consider OTC desk for large sales (>$100k)
-    """)
 
 # ── Footer ───────────────────────────────────────────────────────────────────
 st.divider()
