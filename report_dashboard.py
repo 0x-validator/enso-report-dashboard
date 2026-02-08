@@ -798,7 +798,7 @@ now_dt = datetime.now(timezone.utc)
 
 # Adjust totals with MM holdings
 total_holdings_adj = holdings["total_holdings"] + mm_holdings
-total_sellable_adj = holdings["total_sellable"] + mm_holdings
+total_sellable_adj = holdings["total_sellable"]
 
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown("## ENSO Foundation Biweekly Report")
@@ -844,7 +844,7 @@ with tabs[0]:
             "Locked (unvested)": holdings["locked_vesting"],
         }
         bd_df = pd.DataFrame([
-            {"Category": k, "Amount": v, "Sellable": k not in ("Staked (locked)", "Locked (unvested)")}
+            {"Category": k, "Amount": v, "Sellable": k not in ("Staked (locked)", "Locked (unvested)", "MM — Amber", "MM — Jpeg")}
             for k, v in breakdown.items() if v > 0
         ])
         if not bd_df.empty:
@@ -857,7 +857,7 @@ with tabs[0]:
 
         st.markdown("---")
         st.markdown(f"**Total Sellable: {total_sellable_adj:,.0f} ENSO**")
-        st.caption("Sellable = Liquid + Vested + Staked Expired + Rewards + MM (Amber + Jpeg)")
+        st.caption("Sellable = Liquid + Vested + Staked Expired + Rewards")
 
         # Binance obligation
         st.markdown("---")
