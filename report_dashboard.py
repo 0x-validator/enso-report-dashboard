@@ -239,8 +239,11 @@ def _parse_binance_klines(data: list) -> list[tuple]:
 
 
 def get_spot_volume_binance() -> dict | None:
-    data = safe_get("https://api.binance.com/api/v3/klines",
+    data = safe_get("https://data-api.binance.vision/api/v3/klines",
                     params={"symbol": "ENSOUSDT", "interval": "1d", "limit": "30"})
+    if not data:
+        data = safe_get("https://api.binance.com/api/v3/klines",
+                        params={"symbol": "ENSOUSDT", "interval": "1d", "limit": "30"})
     return _rolling_7day(_parse_binance_klines(data), "Binance") if data else None
 
 
@@ -428,10 +431,16 @@ def get_spot_volume_cointr() -> dict | None:
 
 # ── Perpetual volume functions ───────────────────────────────────────────────
 def get_perp_volume_binance() -> dict | None:
-    data = safe_get("https://fapi.binance.com/fapi/v1/klines",
+    data = safe_get("https://www.binance.com/fapi/v1/klines",
                     params={"symbol": "ENSOUSDT", "interval": "1d", "limit": "30"})
-    oi_data = safe_get("https://fapi.binance.com/fapi/v1/openInterest",
+    if not data:
+        data = safe_get("https://fapi.binance.com/fapi/v1/klines",
+                        params={"symbol": "ENSOUSDT", "interval": "1d", "limit": "30"})
+    oi_data = safe_get("https://www.binance.com/fapi/v1/openInterest",
                        params={"symbol": "ENSOUSDT"})
+    if not oi_data:
+        oi_data = safe_get("https://fapi.binance.com/fapi/v1/openInterest",
+                           params={"symbol": "ENSOUSDT"})
     oi = float(oi_data.get("openInterest", 0)) if oi_data else 0
     if not data:
         return None
