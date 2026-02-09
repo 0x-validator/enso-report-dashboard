@@ -789,16 +789,18 @@ with st.sidebar:
 
     st.divider()
     st.markdown("**Market Makers Holdings**")
+    qp = st.query_params
     mm_amber = st.number_input(
         "Amber",
-        min_value=0, value=0, step=10000,
+        min_value=0, value=int(qp.get("amber", 0)), step=10000,
         help="ENSO tokens held by Amber. Added to Foundation totals.",
     )
     mm_jpeg = st.number_input(
         "Jpeg",
-        min_value=0, value=0, step=10000,
+        min_value=0, value=int(qp.get("jpeg", 0)), step=10000,
         help="ENSO tokens held by Jpeg. Added to Foundation totals.",
     )
+    st.query_params.update({"amber": str(mm_amber), "jpeg": str(mm_jpeg)})
     mm_holdings = mm_amber + mm_jpeg
 
     st.divider()
