@@ -238,23 +238,25 @@ def calculate_vesting_projection(target_date_str: str = "2026-03-27") -> int:
 # ── Staking rewards projection ───────────────────────────────────────────────
 @st.cache_data(ttl=600, show_spinner=False)
 def load_staking_rewards(months_ahead: int = 12) -> dict | None:
-    """Compute Foundation staking rewards projection from positions CSV + schedule."""
-    # Try to find enso_positions.csv in sibling Staking folder
+    """Compute Foundation staking rewards projection from enso_positions.csv.
+    Checks sibling Staking folder first, then bundled CSV in repo."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(script_dir, "..", "Staking", "enso_positions.csv"),
         os.path.join(script_dir, "enso_positions.csv"),
     ]
-    positions_path = None
+    pos_df = None
     for c in candidates:
         if os.path.exists(c):
-            positions_path = c
-            break
-    if not positions_path:
+            try:
+                pos_df = pd.read_csv(c)
+                break
+            except Exception:
+                pass
+    if pos_df is None:
         return None
 
     try:
-        pos_df = pd.read_csv(positions_path)
         fdn = pos_df[pos_df["owner"].str.lower() == FOUNDATION_STAKING_ADDR.lower()]
         fdn_stake_weight = fdn["stake"].sum()
         total_stake_weight = pos_df["stake"].sum()
