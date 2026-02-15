@@ -17,8 +17,6 @@ Run locally:  streamlit run report_dashboard.py
 """
 
 import os
-import subprocess
-import sys
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -113,6 +111,13 @@ REWARDS_SCHEDULE = [
 ]
 
 
+# Event topic hashes for staking contract
+TOPIC_POSITION_CREATED = "0x34e49ed13d7eb52832aff120e7482f7b6e7e0328254ca90ee5834a845a87c3b2"
+TOPIC_FUNDS_DEPOSITED  = "0xed2de103da084463a1b2895568d352fd796dfd1d033c0e8ee9fabe73a6715389"
+TOPIC_FUNDS_WITHDRAWN  = "0xd66662c0ded9e58fd31d5e44944bcfd07ffc15e6927ecc1382e7941cb7bd24c4"
+TOPIC_TRANSFER         = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 def short_addr(addr: str) -> str:
     return f"{addr[:6]}...{addr[-4:]}"
@@ -137,6 +142,87 @@ def safe_post(url: str, json_body: dict, timeout: int = 15) -> dict | None:
     except Exception:
         pass
     return None
+
+
+def _decode_word(data: str, index: int) -> int:
+    start = 2 + index * 64
+    return int(data[start : start + 64], 16)
+
+
+def _fetch_staking_logs(api_key: str, topic0: str) -> list[dict]:
+    """Fetch paginated event logs from the staking contract."""
+    all_logs: list[dict] = []
+    from_block = 0
+    while True:
+        data = safe_get(ETHERSCAN_URL, params={
+            "chainid": "1", "module": "logs", "action": "getLogs",
+            "address": STAKING_CONTRACT, "topic0": topic0,
+            "fromBlock": from_block, "toBlock": "latest", "apikey": api_key,
+        }, timeout=30)
+        if not data or data.get("status") != "1" or not data.get("result"):
+            break
+        logs = data["result"]
+        all_logs.extend(logs)
+        if len(logs) >= 1000:
+            from_block = int(logs[-1]["blockNumber"], 16) + 1
+            time.sleep(0.25)
+        else:
+            break
+    return all_logs
+
+
+def refresh_positions_from_chain(api_key: str) -> pd.DataFrame | None:
+    """Fetch all staking positions with stake weights from Etherscan event logs.
+    Returns a DataFrame matching enso_positions.csv format, or None on failure."""
+    try:
+        pc_logs = _fetch_staking_logs(api_key, TOPIC_POSITION_CREATED)
+        dep_logs = _fetch_staking_logs(api_key, TOPIC_FUNDS_DEPOSITED)
+        wth_logs = _fetch_staking_logs(api_key, TOPIC_FUNDS_WITHDRAWN)
+        tr_logs = _fetch_staking_logs(api_key, TOPIC_TRANSFER)
+
+        if not pc_logs:
+            return None
+
+        now = int(datetime.now(timezone.utc).timestamp())
+        positions: dict[int, dict] = {}
+
+        for log in pc_logs:
+            pid = int(log["topics"][1], 16)
+            expiry = int(log["data"][2:66], 16)
+            validator = bytes.fromhex(log["topics"][2][2:]).rstrip(b"\x00").decode("utf-8", errors="replace")
+            positions[pid] = {
+                "position_id": pid, "expiry_ts": expiry, "validator": validator,
+                "owner": None, "net_deposited": 0.0, "stake": 0.0,
+            }
+
+        for log in tr_logs:
+            to_addr = "0x" + log["topics"][2][-40:]
+            token_id = int(log["topics"][3], 16)
+            if token_id in positions:
+                positions[token_id]["owner"] = to_addr
+
+        for log in dep_logs:
+            pid = int(log["topics"][1], 16)
+            if pid in positions:
+                positions[pid]["net_deposited"] += _decode_word(log["data"], 0) / 10**DECIMALS
+                positions[pid]["stake"] += _decode_word(log["data"], 1) / 10**DECIMALS
+
+        for log in wth_logs:
+            pid = int(log["topics"][1], 16)
+            if pid in positions:
+                positions[pid]["net_deposited"] -= _decode_word(log["data"], 0) / 10**DECIMALS
+
+        df = pd.DataFrame(positions.values())
+        df = df[df["net_deposited"] > 0].copy()
+        df["expiry_utc"] = pd.to_datetime(df["expiry_ts"], unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
+        df["unlock_remaining"] = df["expiry_ts"].apply(
+            lambda t: "UNLOCKED" if t <= now else f"{(t - now) // 86400}d {((t - now) % 86400) // 3600}h"
+        )
+        df = df.sort_values("stake", ascending=False)
+        return df[["position_id", "expiry_ts", "expiry_utc", "unlock_remaining",
+                    "validator", "owner", "net_deposited", "stake"]]
+    except Exception:
+        return None
 
 
 # ── On-chain data functions ──────────────────────────────────────────────────
@@ -1134,48 +1220,27 @@ with tabs[2]:
 
 # ═══════════════ TAB 4: Staking Rewards Projection ═════════════════════════
 with tabs[3]:
-    # Refresh positions button
-    dashboard_dir = Path(__file__).resolve().parent
-    staking_dir = dashboard_dir.parent / "Staking"
-    stakers_script = staking_dir / "enso_top_stakers.py"
-    if stakers_script.exists():
-        if st.button("🔄 Refresh positions data", key="refresh_positions"):
-            with st.spinner("Fetching latest positions from chain..."):
-                result = subprocess.run(
-                    [sys.executable, str(stakers_script)],
-                    cwd=str(staking_dir),
-                    capture_output=True, text=True, timeout=120,
-                )
-            if result.returncode != 0:
-                st.error(f"Script failed (exit {result.returncode}): {result.stderr[:500]}")
-            else:
-                # Copy fresh CSV into dashboard repo
-                src = staking_dir / "enso_positions.csv"
-                dst = dashboard_dir / "enso_positions.csv"
-                if src.exists():
-                    import shutil
-                    shutil.copy2(str(src), str(dst))
-                    # Auto-commit and push so Streamlit Cloud gets the update
-                    git_cmds = [
-                        ["git", "add", "enso_positions.csv"],
-                        ["git", "-c", "user.name=0x-validator",
-                         "-c", "user.email=bitrefillam@gmail.com",
-                         "commit", "-m", "Update enso_positions.csv"],
-                        ["git", "push", "origin", "main"],
-                    ]
-                    push_ok = True
-                    for cmd in git_cmds:
-                        r = subprocess.run(cmd, cwd=str(dashboard_dir),
-                                           capture_output=True, text=True, timeout=30)
-                        if r.returncode != 0:
-                            push_ok = False
-                            break
-                    if push_ok:
-                        st.success("Positions refreshed and pushed to GitHub.")
-                    else:
-                        st.success("Positions refreshed locally (git push skipped).")
-                st.cache_data.clear()
-                st.rerun()
+    # Refresh positions directly from chain (works locally and on Streamlit Cloud)
+    if st.button("🔄 Refresh positions data", key="refresh_positions"):
+        with st.spinner("Fetching all staking positions from Etherscan..."):
+            fresh_df = refresh_positions_from_chain(eth_key)
+        if fresh_df is None or fresh_df.empty:
+            st.error("Failed to fetch positions from Etherscan.")
+        else:
+            # Save CSV — try dashboard dir, sibling Staking dir, and bundled copy
+            dashboard_dir = Path(__file__).resolve().parent
+            staking_dir = dashboard_dir.parent / "Staking"
+            save_paths = [dashboard_dir / "enso_positions.csv"]
+            if staking_dir.exists():
+                save_paths.append(staking_dir / "enso_positions.csv")
+            for p in save_paths:
+                try:
+                    fresh_df.to_csv(str(p), index=False)
+                except Exception:
+                    pass
+            st.success(f"Positions refreshed — {len(fresh_df)} active positions fetched.")
+            st.cache_data.clear()
+            st.rerun()
 
     if staking_rewards is None:
         st.info("Staking rewards data not available. "
