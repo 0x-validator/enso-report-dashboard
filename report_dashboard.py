@@ -9,9 +9,9 @@ Sections:
   2. Market Makers Holdings (manual input, added to totals)
   3. Vesting Contracts Detail
   4. Staked Positions Detail
-  5. Spot Exchange Volumes (14 exchanges)
-  6. Perpetual Exchange Volumes (11 exchanges)
-  7. Selling Plan
+  5. Staking Rewards Projection (Foundation monthly rewards)
+  6. Spot Exchange Volumes (14 exchanges)
+  7. Perpetual Exchange Volumes (11 exchanges)
 
 Run locally:  streamlit run report_dashboard.py
 """
@@ -61,6 +61,29 @@ VESTING_SCHEDULES = [
     {"name": "Operational 1", "start": 1760434200, "end": 1886578200, "total": 4_020_000},
     {"name": "Operational 2", "start": 1760434200, "end": 1774690200, "total": 1_230_000},
     {"name": "Operational 3", "start": 1760434200, "end": 1773394200, "total": 1_750_000},
+]
+
+FOUNDATION_STAKING_ADDR = "0x715b1ddf5d6da6846eadb72d3d6f9d93148d0bb0"
+
+# Monthly staking inflation schedule (Date, Newly Minted ENSO)
+REWARDS_SCHEDULE = [
+    ("2025-11-14", 629532.04), ("2025-12-14", 606812.70), ("2026-01-14", 573129.66),
+    ("2026-02-14", 531316.33), ("2026-03-14", 484654.38), ("2026-04-14", 436452.71),
+    ("2026-05-14", 389669.23), ("2026-06-14", 346635.34), ("2026-07-14", 308914.21),
+    ("2026-08-14", 277292.38), ("2026-09-14", 251877.93), ("2026-10-14", 232264.45),
+    ("2026-11-14", 217717.58), ("2026-12-14", 207348.92), ("2027-01-14", 200254.63),
+    ("2027-02-14", 195609.57), ("2027-03-14", 192718.63), ("2027-04-14", 191033.29),
+    ("2027-05-14", 190144.57), ("2027-06-14", 189762.60), ("2027-07-14", 189691.36),
+    ("2027-08-14", 189803.97), ("2027-09-14", 190021.68), ("2027-10-14", 190297.54),
+    ("2027-11-14", 190604.61), ("2027-12-14", 190928.03), ("2028-01-14", 191259.87),
+    ("2028-02-14", 191596.08), ("2028-03-14", 191934.64), ("2028-04-14", 192274.60),
+    ("2028-05-14", 192615.50), ("2028-06-14", 192957.15), ("2028-07-14", 193299.47),
+    ("2028-08-14", 193642.41), ("2028-09-14", 193985.98), ("2028-10-14", 194330.16),
+    ("2028-11-14", 194674.95), ("2028-12-14", 195020.35), ("2029-01-14", 195366.36),
+    ("2029-02-14", 195712.99), ("2029-03-14", 196060.24), ("2029-04-14", 196408.10),
+    ("2029-05-14", 196756.57), ("2029-06-14", 197105.67), ("2029-07-14", 197455.38),
+    ("2029-08-14", 197805.72), ("2029-09-14", 198156.68), ("2029-10-14", 198508.26),
+    ("2029-11-14", 198860.46), ("2029-12-14", 199213.29),
 ]
 
 
@@ -207,6 +230,63 @@ def calculate_vesting_projection(target_date_str: str = "2026-03-27") -> int:
         if effective_end > now_ts:
             total += rate * (effective_end - now_ts)
     return round(total)
+
+
+# ── Staking rewards projection ───────────────────────────────────────────────
+@st.cache_data(ttl=600, show_spinner=False)
+def load_staking_rewards(months_ahead: int = 12) -> dict | None:
+    """Compute Foundation staking rewards projection from positions CSV + schedule."""
+    # Try to find enso_positions.csv in sibling Staking folder
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(script_dir, "..", "Staking", "enso_positions.csv"),
+        os.path.join(script_dir, "enso_positions.csv"),
+    ]
+    positions_path = None
+    for c in candidates:
+        if os.path.exists(c):
+            positions_path = c
+            break
+    if not positions_path:
+        return None
+
+    try:
+        pos_df = pd.read_csv(positions_path)
+        fdn = pos_df[pos_df["owner"].str.lower() == FOUNDATION_STAKING_ADDR.lower()]
+        fdn_stake_weight = fdn["stake"].sum()
+        total_stake_weight = pos_df["stake"].sum()
+        if total_stake_weight == 0:
+            return None
+        fdn_share = fdn_stake_weight / total_stake_weight
+
+        today = datetime.now(timezone.utc).date()
+        future = [(d, m) for d, m in REWARDS_SCHEDULE
+                   if datetime.strptime(d, "%Y-%m-%d").date() >= today]
+        future = future[:months_ahead]
+        if not future:
+            return None
+
+        rows = []
+        cumulative = 0.0
+        for date_str, pool in future:
+            reward = pool * 0.80 * fdn_share
+            cumulative += reward
+            rows.append({
+                "Date": date_str, "Reward Pool": pool,
+                "Foundation Reward": reward, "Cumulative": cumulative,
+            })
+
+        return {
+            "monthly": pd.DataFrame(rows),
+            "total_reward": cumulative,
+            "fdn_stake_weight": fdn_stake_weight,
+            "total_stake_weight": total_stake_weight,
+            "fdn_share": fdn_share,
+            "fdn_staked": fdn["net_deposited"].sum(),
+            "num_positions": len(fdn),
+        }
+    except Exception:
+        return None
 
 
 # ── Exchange volume functions ────────────────────────────────────────────────
@@ -828,6 +908,7 @@ with st.spinner("Fetching exchange volumes..."):
 enso_price = get_enso_price(cg_key)
 supply = get_circulating_supply()
 vesting_proj = calculate_vesting_projection(BINANCE_DUE_DATE)
+staking_rewards = load_staking_rewards()
 now_dt = datetime.now(timezone.utc)
 
 # Adjust totals with MM holdings
@@ -858,7 +939,7 @@ st.divider()
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
     "🏦 Treasury Holdings", "📜 Vesting Detail", "🔒 Staked Positions",
-    "📊 Spot Volumes", "📈 Perp Volumes",
+    "💰 Staking Rewards", "📊 Spot Volumes", "📈 Perp Volumes",
 ])
 
 # ═══════════════ TAB 1: Treasury Holdings ═══════════════════════════════════
@@ -1018,8 +1099,61 @@ with tabs[2]:
             fig_lock.update_layout(yaxis_tickformat=",.", height=350)
             st.plotly_chart(fig_lock, use_container_width=True)
 
-# ═══════════════ TAB 4: Spot Volumes ════════════════════════════════════════
+# ═══════════════ TAB 4: Staking Rewards Projection ═════════════════════════
 with tabs[3]:
+    if staking_rewards is None:
+        st.info("Staking rewards data not available. "
+                "Ensure `enso_positions.csv` exists in the Staking folder.")
+    else:
+        sr = staking_rewards
+        st.markdown("#### Foundation Staking Rewards Projection")
+
+        mc1, mc2, mc3 = st.columns(3)
+        mc1.metric("Foundation Staked", f"{sr['fdn_staked']:,.0f} ENSO")
+        mc2.metric("Positions", f"{sr['num_positions']}")
+        mc3.metric("Stake Weight Share", f"{sr['fdn_share'] * 100:.2f}%")
+
+        st.metric("Total Projected Rewards (12 months)", f"{sr['total_reward']:,.0f} ENSO")
+
+        # Monthly breakdown table
+        st.markdown("#### Monthly Breakdown")
+        display = sr["monthly"].copy()
+        display["Reward Pool"] = display["Reward Pool"].apply(lambda x: f"{x:,.0f}")
+        display["Foundation Reward"] = display["Foundation Reward"].apply(lambda x: f"{x:,.0f}")
+        display["Cumulative"] = display["Cumulative"].apply(lambda x: f"{x:,.0f}")
+        st.dataframe(display, use_container_width=True, hide_index=True)
+
+        # Chart
+        chart_df = sr["monthly"].copy()
+        fig_rew = go.Figure()
+        fig_rew.add_trace(go.Bar(
+            x=chart_df["Date"], y=chart_df["Foundation Reward"],
+            name="Monthly Reward",
+            marker_color="#22c55e",
+            hovertemplate="%{x}<br>%{y:,.0f} ENSO<extra></extra>",
+        ))
+        fig_rew.add_trace(go.Scatter(
+            x=chart_df["Date"], y=chart_df["Cumulative"],
+            name="Cumulative",
+            line=dict(color="#3b82f6", width=2),
+            yaxis="y2",
+            hovertemplate="%{x}<br>%{y:,.0f} ENSO<extra></extra>",
+        ))
+        fig_rew.update_layout(
+            title="Foundation Staking Rewards Projection",
+            yaxis=dict(title="Monthly Reward (ENSO)", tickformat=",."),
+            yaxis2=dict(title="Cumulative (ENSO)", tickformat=",.",
+                        overlaying="y", side="right"),
+            height=420, hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        st.plotly_chart(fig_rew, use_container_width=True)
+
+        st.caption("Assumes current stake weight share remains constant. "
+                   "Rewards = Monthly Pool × 80% (staker share) × Foundation weight share.")
+
+# ═══════════════ TAB 5: Spot Volumes ════════════════════════════════════════
+with tabs[4]:
     st.markdown("#### Exchange Average Daily Volume (Last 7 Days)")
     if enso_price:
         st.caption(f"ENSO Spot Price: **${enso_price:.4f}**")
@@ -1062,8 +1196,8 @@ with tabs[3]:
 
         st.metric("Total Avg Daily Spot Volume", f"${total_spot_daily:,.0f}")
 
-# ═══════════════ TAB 5: Perp Volumes ════════════════════════════════════════
-with tabs[4]:
+# ═══════════════ TAB 6: Perp Volumes ════════════════════════════════════════
+with tabs[5]:
     st.markdown("#### Perpetuals Average Daily Volume (Last 7 Days)")
 
     if not perp_vols:
