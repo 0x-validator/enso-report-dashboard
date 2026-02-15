@@ -1107,22 +1107,47 @@ with tabs[2]:
 # ═══════════════ TAB 4: Staking Rewards Projection ═════════════════════════
 with tabs[3]:
     # Refresh positions button
-    staking_dir = Path(__file__).resolve().parent.parent / "Staking"
+    dashboard_dir = Path(__file__).resolve().parent
+    staking_dir = dashboard_dir.parent / "Staking"
     stakers_script = staking_dir / "enso_top_stakers.py"
     if stakers_script.exists():
         if st.button("🔄 Refresh positions data", key="refresh_positions"):
-            with st.spinner("Running enso_top_stakers.py..."):
+            with st.spinner("Fetching latest positions from chain..."):
                 result = subprocess.run(
                     [sys.executable, str(stakers_script)],
                     cwd=str(staking_dir),
                     capture_output=True, text=True, timeout=120,
                 )
-            if result.returncode == 0:
-                st.success("Positions refreshed.")
+            if result.returncode != 0:
+                st.error(f"Script failed (exit {result.returncode}): {result.stderr[:500]}")
+            else:
+                # Copy fresh CSV into dashboard repo
+                src = staking_dir / "enso_positions.csv"
+                dst = dashboard_dir / "enso_positions.csv"
+                if src.exists():
+                    import shutil
+                    shutil.copy2(str(src), str(dst))
+                    # Auto-commit and push so Streamlit Cloud gets the update
+                    git_cmds = [
+                        ["git", "add", "enso_positions.csv"],
+                        ["git", "-c", "user.name=0x-validator",
+                         "-c", "user.email=bitrefillam@gmail.com",
+                         "commit", "-m", "Update enso_positions.csv"],
+                        ["git", "push", "origin", "main"],
+                    ]
+                    push_ok = True
+                    for cmd in git_cmds:
+                        r = subprocess.run(cmd, cwd=str(dashboard_dir),
+                                           capture_output=True, text=True, timeout=30)
+                        if r.returncode != 0:
+                            push_ok = False
+                            break
+                    if push_ok:
+                        st.success("Positions refreshed and pushed to GitHub.")
+                    else:
+                        st.success("Positions refreshed locally (git push skipped).")
                 st.cache_data.clear()
                 st.rerun()
-            else:
-                st.error(f"Script failed (exit {result.returncode}): {result.stderr[:500]}")
 
     if staking_rewards is None:
         st.info("Staking rewards data not available. "
