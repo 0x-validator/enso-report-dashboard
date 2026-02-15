@@ -976,6 +976,7 @@ with tabs[0]:
 
     with col1:
         st.markdown("#### Holdings Breakdown")
+        projected_total = staking_rewards["total_reward"] if staking_rewards else 0
         breakdown = {
             "Liquid — ETH": holdings["liquid"],
             "Liquid — BSC": holdings["liquid_bsc"],
@@ -986,9 +987,12 @@ with tabs[0]:
             "MM — Jpeg": mm_jpeg,
             "Staked (locked)": holdings["staked_locked"],
             "Locked (unvested)": holdings["locked_vesting"],
+            "Projected Staking Rewards": projected_total,
         }
+        non_sellable = {"Staked (locked)", "Locked (unvested)", "MM — Amber",
+                        "MM — Jpeg", "Projected Staking Rewards"}
         bd_df = pd.DataFrame([
-            {"Category": k, "Amount": v, "Sellable": k not in ("Staked (locked)", "Locked (unvested)", "MM — Amber", "MM — Jpeg")}
+            {"Category": k, "Amount": v, "Sellable": k not in non_sellable}
             for k, v in breakdown.items() if v > 0
         ])
         if not bd_df.empty:
@@ -1009,6 +1013,7 @@ with tabs[0]:
         st.markdown(f"- **Due:** {BINANCE_DUE_DATE}")
         st.markdown(f"- **Amount:** {BINANCE_OBLIGATION:,.0f} ENSO")
         st.markdown(f"- **Vesting until then:** ~{vesting_proj:,.0f} ENSO")
+        st.markdown(f"- **Projected staking rewards:** ~{projected_total:,.0f} ENSO")
         net_after = total_sellable_adj - BINANCE_OBLIGATION + vesting_proj
         st.markdown(f"- **Net sellable after obligation:** {net_after:,.0f} ENSO")
 
