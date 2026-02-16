@@ -43,6 +43,8 @@ GOLDSKY_URL = "https://api.goldsky.com/api/public/project_cmgrrbljx1rpt01wnczmq0
 RPC_URL = "https://eth.llamarpc.com"
 BSC_RPC_URL = "https://bsc-dataseed.binance.org/"
 BSC_ENSO_CONTRACT = "0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef"
+MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
+RPC_URLS = [RPC_URL, "https://1rpc.io/eth", "https://cloudflare-eth.com"]
 COINGECKO_URL = "https://api.coingecko.com/api/v3"
 
 FOUNDATION_WALLETS = {
@@ -277,11 +279,44 @@ def get_vesting_info(contract: str, api_key: str) -> dict:
 
 
 def get_staked_positions(owner: str) -> list[dict]:
-    query = '{ positions(where:{owner:"%s"}) { id expiry deposit } }' % owner.lower()
+    """Fetch staking positions for *owner*.
+
+    Primary: enso_positions.csv (from chain events, has all positions).
+    Fallback: Goldsky subgraph (with explicit first: 1000).
+    """
+    now = int(datetime.now(timezone.utc).timestamp())
+
+    # --- CSV first (reliable, derived from on-chain event logs) ---
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for csv_path in [
+        os.path.join(script_dir, "..", "Staking", "enso_positions.csv"),
+        os.path.join(script_dir, "enso_positions.csv"),
+    ]:
+        if os.path.exists(csv_path):
+            try:
+                df = pd.read_csv(csv_path)
+                fdn = df[df["owner"].str.lower() == owner.lower()]
+                if not fdn.empty:
+                    positions = []
+                    for _, row in fdn.iterrows():
+                        expiry = int(row["expiry_ts"])
+                        positions.append({
+                            "id": int(row["position_id"]),
+                            "deposit": float(row["net_deposited"]),
+                            "expiry_ts": expiry,
+                            "expiry_utc": datetime.fromtimestamp(expiry, tz=timezone.utc),
+                            "is_expired": expiry <= now,
+                        })
+                    return positions
+            except Exception:
+                pass
+
+    # --- Fallback: Goldsky subgraph ---
+    query = ('{ positions(first: 1000, orderBy: id, '
+             'where:{owner:"%s"}) { id expiry deposit } }') % owner.lower()
     data = safe_post(GOLDSKY_URL, {"query": query})
     if not data or not data.get("data", {}).get("positions"):
         return []
-    now = int(datetime.now(timezone.utc).timestamp())
     positions = []
     for p in data["data"]["positions"]:
         deposit = int(p["deposit"]) / 10**DECIMALS
@@ -296,20 +331,43 @@ def get_staked_positions(owner: str) -> list[dict]:
     return positions
 
 
-def get_position_rewards(position_id: int) -> float:
-    id_hex = hex(position_id)[2:].zfill(64)
-    call_data = "0x61c02efb" + id_hex
+def get_all_position_rewards(position_ids: list[int]) -> dict[int, float]:
+    """Fetch rewards for all positions in a single Multicall3 call."""
+    from eth_abi import encode as abi_encode, decode as abi_decode
+
+    if not position_ids:
+        return {}
+
+    calls = []
+    staking_addr = bytes.fromhex(STAKING_CONTRACT[2:])
+    for pid in position_ids:
+        call_data = bytes.fromhex("61c02efb") + pid.to_bytes(32, "big")
+        calls.append((staking_addr, True, call_data))
+
+    encoded = "0x82ad56cb" + abi_encode(["(address,bool,bytes)[]"], [calls]).hex()
     body = {
         "jsonrpc": "2.0", "id": 1, "method": "eth_call",
-        "params": [{"to": STAKING_CONTRACT, "data": call_data}, "latest"],
+        "params": [{"to": MULTICALL3, "data": encoded}, "latest"],
     }
-    data = safe_post(RPC_URL, body)
-    if data and data.get("result") and data["result"] != "0x":
+
+    for rpc in RPC_URLS:
+        data = safe_post(rpc, body, timeout=30)
+        if not data or not data.get("result") or data["result"] == "0x":
+            continue
         try:
-            return int(data["result"], 16) / 10**DECIMALS
-        except (ValueError, TypeError):
-            pass
-    return 0.0
+            raw = bytes.fromhex(data["result"][2:])
+            decoded = abi_decode(["(bool,bytes)[]"], raw)[0]
+            rewards = {}
+            for i, (success, ret_data) in enumerate(decoded):
+                pid = position_ids[i]
+                if success and len(ret_data) >= 32:
+                    rewards[pid] = int.from_bytes(ret_data[:32], "big") / 10**DECIMALS
+                else:
+                    rewards[pid] = 0.0
+            return rewards
+        except Exception:
+            continue
+    return {pid: 0.0 for pid in position_ids}
 
 
 def get_enso_price(cg_key: str) -> float | None:
@@ -323,9 +381,9 @@ def get_enso_price(cg_key: str) -> float | None:
 
 def get_circulating_supply() -> dict:
     data = safe_get("http://api.enso.finance/api/v1/enso-token/circulating-supply")
-    if data:
+    if data and data.get("circulatingSupply"):
         return {
-            "circulating": float(data.get("circulatingSupply", 0)),
+            "circulating": float(data["circulatingSupply"]),
             "total": float(data.get("totalSupply", 0)),
         }
     return {"circulating": 0, "total": 0}
@@ -897,12 +955,12 @@ def load_holdings(api_key: str):
 
             if name == "treasury":
                 positions = get_staked_positions(info["addr"])
+                rewards_map = get_all_position_rewards([p["id"] for p in positions])
                 total_rewards = 0
                 for p in positions:
-                    r = get_position_rewards(p["id"])
+                    r = rewards_map.get(p["id"], 0.0)
                     p["rewards"] = r
                     total_rewards += r
-                    time.sleep(0.2)
                 staked_total = sum(p["deposit"] for p in positions)
                 staked_expired = sum(p["deposit"] for p in positions if p["is_expired"])
                 staked_locked = sum(p["deposit"] for p in positions if not p["is_expired"])
@@ -995,12 +1053,12 @@ with st.sidebar:
     qp = st.query_params
     mm_amber = st.number_input(
         "Amber",
-        min_value=0, value=int(qp.get("amber", 0)), step=10000,
+        min_value=0, value=int(qp.get("amber", 330940)), step=10000,
         help="ENSO tokens held by Amber. Added to Foundation totals.",
     )
     mm_jpeg = st.number_input(
         "Jpeg",
-        min_value=0, value=int(qp.get("jpeg", 0)), step=10000,
+        min_value=0, value=int(qp.get("jpeg", 537202)), step=10000,
         help="ENSO tokens held by Jpeg. Added to Foundation totals.",
     )
     st.query_params.update({"amber": str(mm_amber), "jpeg": str(mm_jpeg)})
