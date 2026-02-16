@@ -58,6 +58,24 @@ FOUNDATION_WALLETS = {
 
 BINANCE_OBLIGATION = 1_750_000
 BINANCE_DUE_DATE = "2026-03-27"
+MM_DEFAULTS = {"amber": 330_940, "jpeg": 537_202}
+
+# Theoretical circulating supply by year-month (from tokenomics model)
+THEORETICAL_SUPPLY = {
+    "2025-10": 20_590_000, "2025-11": 21_973_907, "2025-12": 23_335_095,
+    "2026-01": 24_662_599, "2026-02": 25_948_291, "2026-03": 27_187_320,
+    "2026-04": 28_378_148, "2026-05": 29_522_192, "2026-06": 30_623_202,
+    "2026-07": 31_686_492, "2026-08": 32_718_159, "2026-09": 33_724_412,
+    "2026-10": 37_119_593, "2026-11": 40_500_227, "2026-12": 43_870_493,
+    "2027-01": 47_233_664, "2027-02": 50_592_190, "2027-03": 53_947_826,
+    "2027-04": 57_301_776, "2027-05": 60_654_837, "2027-06": 64_007_516,
+    "2027-07": 67_360_124, "2027-08": 70_712_845, "2027-09": 74_065_783,
+    "2027-10": 77_418_997, "2027-11": 80_163_977, "2027-12": 82_909_280,
+    "2028-01": 85_654_915, "2028-02": 88_400_886, "2028-03": 91_147_196,
+    "2028-04": 93_893_845, "2028-05": 96_640_836, "2028-06": 99_388_168,
+    "2028-07": 102_135_842, "2028-08": 104_883_860, "2028-09": 107_632_220,
+    "2028-10": 107_972_384, "2028-11": 108_312_892, "2028-12": 108_653_746,
+}
 
 VESTING_SCHEDULES = [
     {"name": "Vesting Contract", "start": 1760434200, "end": 1823506200, "total": 14_605_000},
@@ -1048,20 +1066,8 @@ with st.sidebar:
         st.warning("Enter Etherscan API key.")
         st.stop()
 
-    st.divider()
-    st.markdown("**Market Makers Holdings**")
-    qp = st.query_params
-    mm_amber = st.number_input(
-        "Amber",
-        min_value=0, value=int(qp.get("amber", 330940)), step=10000,
-        help="ENSO tokens held by Amber. Added to Foundation totals.",
-    )
-    mm_jpeg = st.number_input(
-        "Jpeg",
-        min_value=0, value=int(qp.get("jpeg", 537202)), step=10000,
-        help="ENSO tokens held by Jpeg. Added to Foundation totals.",
-    )
-    st.query_params.update({"amber": str(mm_amber), "jpeg": str(mm_jpeg)})
+    mm_amber = MM_DEFAULTS["amber"]
+    mm_jpeg = MM_DEFAULTS["jpeg"]
     mm_holdings = mm_amber + mm_jpeg
 
     st.divider()
@@ -1178,6 +1184,12 @@ with tabs[0]:
         if supply["circulating"]:
             st.markdown("#### Supply Context")
             st.markdown(f"- Circulating: **{supply['circulating']:,.0f}** ENSO")
+            theoretical = THEORETICAL_SUPPLY.get(now_dt.strftime("%Y-%m"))
+            if theoretical:
+                delta = supply["circulating"] - theoretical
+                delta_color = "green" if delta >= 0 else "red"
+                st.markdown(f"- Theoretical: **{theoretical:,.0f}** ENSO")
+                st.markdown(f"- Delta: :{delta_color}[**{delta:+,.0f}**] ENSO")
             st.markdown(f"- Total Supply: **{supply['total']:,.0f}** ENSO")
 
     # Wallet breakdown
