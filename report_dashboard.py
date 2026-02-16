@@ -1051,19 +1051,17 @@ with st.sidebar:
     st.divider()
 
     try:
-        api_key = st.secrets["ETHERSCAN_API_KEY"]
+        eth_key = st.secrets["ETHERSCAN_API_KEY"]
     except (KeyError, FileNotFoundError):
-        api_key = os.getenv("ETHERSCAN_API_KEY", "")
-    eth_key = st.text_input("Etherscan API Key", value=api_key, type="password")
+        eth_key = os.getenv("ETHERSCAN_API_KEY", "")
 
     try:
-        cg_key_default = st.secrets["COINGECKO_API_KEY"]
+        cg_key = st.secrets["COINGECKO_API_KEY"]
     except (KeyError, FileNotFoundError):
-        cg_key_default = os.getenv("COINGECKO_API_KEY", "")
-    cg_key = st.text_input("CoinGecko API Key", value=cg_key_default, type="password")
+        cg_key = os.getenv("COINGECKO_API_KEY", "")
 
     if not eth_key:
-        st.warning("Enter Etherscan API key.")
+        st.warning("Etherscan API key not configured.")
         st.stop()
 
     mm_amber = MM_DEFAULTS["amber"]
