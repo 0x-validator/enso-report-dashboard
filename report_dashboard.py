@@ -1244,6 +1244,103 @@ with tabs[1]:
         })
     st.dataframe(pd.DataFrame(proj_rows), use_container_width=True, hide_index=True)
 
+    # ── Token inflows timeline chart ──────────────────────────────────────
+    st.markdown("#### Foundation Token Inflows Over Time")
+
+    # Build monthly timeline from today to end of longest schedule
+    from dateutil.relativedelta import relativedelta
+
+    chart_start = now_dt.replace(day=1)
+    # Cap at Oct 2029 (covers all vesting + 3 yrs of rewards)
+    chart_end = datetime(2029, 10, 1, tzinfo=timezone.utc)
+    months = []
+    m = chart_start
+    while m <= chart_end:
+        months.append(m)
+        m += relativedelta(months=1)
+
+    # 1) Vesting inflows per month
+    vesting_per_month = []
+    for m_start in months:
+        m_end = m_start + relativedelta(months=1)
+        m_start_ts = int(m_start.timestamp())
+        m_end_ts = int(m_end.timestamp())
+        total_vest = 0.0
+        for v in VESTING_SCHEDULES:
+            rate = v["total"] / (v["end"] - v["start"])  # tokens per second
+            eff_start = max(m_start_ts, v["start"])
+            eff_end = min(m_end_ts, v["end"])
+            if eff_end > eff_start:
+                total_vest += rate * (eff_end - eff_start)
+        vesting_per_month.append(total_vest)
+
+    # 2) Staking rewards per month (Foundation share)
+    fdn_share = staking_rewards["fdn_share"] if staking_rewards else 0
+    rewards_lookup = {}
+    for date_str, pool in REWARDS_SCHEDULE:
+        ym = date_str[:7]  # "YYYY-MM"
+        rewards_lookup[ym] = pool * 0.80 * fdn_share
+
+    rewards_per_month = []
+    for m_start in months:
+        ym = m_start.strftime("%Y-%m")
+        rewards_per_month.append(rewards_lookup.get(ym, 0.0))
+
+    # 3) Staking position unlocks per month
+    unlock_per_month = []
+    for m_start in months:
+        m_end = m_start + relativedelta(months=1)
+        m_start_ts = int(m_start.timestamp())
+        m_end_ts = int(m_end.timestamp())
+        unlocked = 0.0
+        for p in holdings["positions"]:
+            if m_start_ts <= p["expiry_ts"] < m_end_ts:
+                unlocked += p["deposit"]
+        unlock_per_month.append(unlocked)
+
+    inflow_df = pd.DataFrame({
+        "Month": [m.strftime("%Y-%m") for m in months],
+        "Vesting": vesting_per_month,
+        "Staking Rewards": rewards_per_month,
+        "Position Unlocks": unlock_per_month,
+    })
+    inflow_df["Total"] = inflow_df["Vesting"] + inflow_df["Staking Rewards"] + inflow_df["Position Unlocks"]
+    inflow_df["Cumulative"] = inflow_df["Total"].cumsum()
+
+    fig_inflow = go.Figure()
+    fig_inflow.add_trace(go.Bar(
+        x=inflow_df["Month"], y=inflow_df["Vesting"],
+        name="Vesting", marker_color="#6366f1",
+        hovertemplate="%{x}<br>%{y:,.0f} ENSO<extra>Vesting</extra>",
+    ))
+    fig_inflow.add_trace(go.Bar(
+        x=inflow_df["Month"], y=inflow_df["Staking Rewards"],
+        name="Staking Rewards", marker_color="#22c55e",
+        hovertemplate="%{x}<br>%{y:,.0f} ENSO<extra>Staking Rewards</extra>",
+    ))
+    fig_inflow.add_trace(go.Bar(
+        x=inflow_df["Month"], y=inflow_df["Position Unlocks"],
+        name="Position Unlocks", marker_color="#f59e0b",
+        hovertemplate="%{x}<br>%{y:,.0f} ENSO<extra>Position Unlocks</extra>",
+    ))
+    fig_inflow.add_trace(go.Scatter(
+        x=inflow_df["Month"], y=inflow_df["Cumulative"],
+        name="Cumulative", line=dict(color="#ef4444", width=2),
+        yaxis="y2",
+        hovertemplate="%{x}<br>%{y:,.0f} ENSO<extra>Cumulative</extra>",
+    ))
+    fig_inflow.update_layout(
+        barmode="stack",
+        yaxis=dict(title="Monthly Inflow (ENSO)", tickformat=",."),
+        yaxis2=dict(title="Cumulative (ENSO)", tickformat=",.",
+                    overlaying="y", side="right"),
+        height=450, hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+    )
+    st.plotly_chart(fig_inflow, use_container_width=True)
+    st.caption("Projected monthly token inflows from vesting contracts, "
+               "staking rewards (at current stake share), and staked position unlocks.")
+
 # ═══════════════ TAB 3: Staked Positions ════════════════════════════════════
 with tabs[2]:
     positions = holdings["positions"]
