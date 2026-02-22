@@ -366,6 +366,17 @@ def build_message():
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    breakdown = [
+        ("Liquid (ETH)",      h["liquid"]),
+        ("Liquid (BSC)",      h["liquid_bsc"]),
+        ("Vested Unclaimed",  h["vested_unclaimed"]),
+        ("Staked (Expired)",  h["staked_expired"]),
+        ("Staked (Locked)",   h["staked_locked"]),
+        ("Staking Rewards",   h["rewards"]),
+        ("Locked Unvested",   h["locked_vesting"]),
+        ("Market Makers",     h["mm_holdings"]),
+    ]
+
     lines = [
         "<b>ENSO Foundation — Treasury Report</b>",
         today,
@@ -374,15 +385,10 @@ def build_message():
         f"<b>Total Sellable:</b>  {fmt(h['total_sellable'])} ENSO",
         "",
         "<b>Holdings Breakdown:</b>",
-        f"  Liquid (ETH):        {fmt(h['liquid'])}",
-        f"  Liquid (BSC):        {fmt(h['liquid_bsc'])}",
-        f"  Vested Unclaimed:    {fmt(h['vested_unclaimed'])}",
-        f"  Staked (Expired):    {fmt(h['staked_expired'])}",
-        f"  Staked (Locked):     {fmt(h['staked_locked'])}",
-        f"  Staking Rewards:     {fmt(h['rewards'])}",
-        f"  Locked Unvested:     {fmt(h['locked_vesting'])}",
-        f"  Market Makers:       {fmt(h['mm_holdings'])}",
     ]
+    for label, value in breakdown:
+        if value > 0:
+            lines.append(f"  {label + ':':21s} {fmt(value)}")
 
     if rewards_proj:
         lines.append("")

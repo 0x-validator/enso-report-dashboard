@@ -2,8 +2,8 @@ name: Foundation Treasury Report
 
 on:
   schedule:
-    # Every 3 days at 14:00 UTC (9:00 AM EST)
-    - cron: "0 14 */3 * *"
+    # Every 3 days at 15:00 UTC (10:00 AM EST)
+    - cron: "0 15 */3 * *"
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
 jobs:
