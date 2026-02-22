@@ -3,3 +3,4 @@ plotly>=5.18
 pandas>=2.0
 requests>=2.31
 eth-abi>=5.0
+python-dotenv>=1.0
