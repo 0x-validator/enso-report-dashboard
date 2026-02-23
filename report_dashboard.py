@@ -1385,6 +1385,12 @@ with tabs[2]:
 
 # ═══════════════ TAB 4: Staking Rewards Projection ═════════════════════════
 with tabs[3]:
+    # Show last-updated timestamp from the committed CSV
+    _csv_path = Path(__file__).resolve().parent / "enso_positions.csv"
+    if _csv_path.exists():
+        _csv_mtime = datetime.fromtimestamp(_csv_path.stat().st_mtime, tz=timezone.utc)
+        st.caption(f"Position data last updated: {_csv_mtime.strftime('%Y-%m-%d %H:%M UTC')}")
+
     # Refresh positions directly from chain (works locally and on Streamlit Cloud)
     if st.button("🔄 Refresh positions data", key="refresh_positions"):
         with st.spinner("Fetching all staking positions from Etherscan..."):

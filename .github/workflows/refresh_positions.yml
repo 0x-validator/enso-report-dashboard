@@ -1,0 +1,34 @@
+name: Refresh Staking Positions
+
+on:
+  schedule:
+    # Every 3 days at 15:00 UTC (10:00 AM EST)
+    - cron: "0 15 */3 * *"
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pandas
+
+      - name: Refresh positions from Etherscan
+        env:
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+        run: python refresh_positions.py
+
+      - name: Commit updated CSV
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add enso_positions.csv
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Auto-refresh staking positions data"
+          git push
