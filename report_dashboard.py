@@ -57,7 +57,7 @@ FOUNDATION_WALLETS = {
 }
 
 BINANCE_OBLIGATION = 1_750_000
-BINANCE_DUE_DATE = "2026-03-27"
+BINANCE_DUE_DATE = "2026-03-14"
 MM_DEFAULTS = {"amber": 330_940, "jpeg": 537_202}
 
 # Theoretical circulating supply by year-month (from tokenomics model)
@@ -407,7 +407,7 @@ def get_circulating_supply() -> dict:
     return {"circulating": 0, "total": 0}
 
 
-def calculate_vesting_projection(target_date_str: str = "2026-03-27") -> int:
+def calculate_vesting_projection(target_date_str: str = "2026-03-14") -> int:
     target_ts = int(datetime.strptime(target_date_str, "%Y-%m-%d").replace(
         tzinfo=timezone.utc).timestamp())
     now_ts = int(datetime.now(timezone.utc).timestamp())
