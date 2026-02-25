@@ -364,6 +364,12 @@ def build_message():
     print("Computing rewards projection...")
     rewards_proj = load_staking_rewards_projection()
 
+    # Add projected staking rewards to total holdings
+    expected_rewards_total = 0
+    if rewards_proj:
+        expected_rewards_total = sum(r["reward"] for r in rewards_proj)
+        h["total_holdings"] += expected_rewards_total
+
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     breakdown = [
@@ -373,6 +379,7 @@ def build_message():
         ("Staked (Expired)",  h["staked_expired"]),
         ("Staked (Locked)",   h["staked_locked"]),
         ("Staking Rewards",   h["rewards"]),
+        ("Expected Rewards",  expected_rewards_total),
         ("Locked Unvested",   h["locked_vesting"]),
         ("Market Makers",     h["mm_holdings"]),
     ]
