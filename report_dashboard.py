@@ -397,8 +397,12 @@ def get_enso_price(cg_key: str) -> float | None:
     return None
 
 
+@st.cache_data(ttl=600, show_spinner=False)
 def get_circulating_supply() -> dict:
-    data = safe_get("http://api.enso.finance/api/v1/enso-token/circulating-supply")
+    data = safe_get(
+        "http://api.enso.finance/api/v1/enso-token/circulating-supply",
+        headers={"Authorization": "Bearer ef341f81-88d2-487d-8b5b-355f5aa99a7"},
+    )
     if data and data.get("circulatingSupply"):
         return {
             "circulating": float(data["circulatingSupply"]),
