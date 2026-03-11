@@ -55,7 +55,7 @@ FOUNDATION_WALLETS = {
     "vesting_operational_3": {"addr": "0xa3314896ae22caf4bfdcb0bd4c3cabce324d8f3e", "type": "vesting"},
 }
 
-MM_DEFAULTS = {"amber": 307_332, "jpeg": 380_607}
+MM_DEFAULTS = {"amber": 431_158, "jpeg": 380_607}
 FOUNDATION_STAKING_ADDR = "0x715b1ddf5d6da6846eadb72d3d6f9d93148d0bb0"
 
 REWARDS_SCHEDULE = [
