@@ -27,6 +27,7 @@ load_dotenv()
 ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY", "")
 
 if not ETHERSCAN_API_KEY:
     sys.exit("Error: ETHERSCAN_API_KEY not set in .env")
@@ -42,6 +43,7 @@ DECIMALS = 18
 ETHERSCAN_URL = "https://api.etherscan.io/v2/api"
 BSC_RPC_URL = "https://bsc-dataseed.binance.org/"
 BSC_ENSO_CONTRACT = "0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef"
+COINGECKO_URL = "https://api.coingecko.com/api/v3"
 MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
 RPC_URLS = ["https://eth.llamarpc.com", "https://1rpc.io/eth",
             "https://cloudflare-eth.com"]
@@ -56,7 +58,6 @@ FOUNDATION_WALLETS = {
 }
 
 MM_DEFAULTS = {"amber": 431_158, "jpeg": 380_607}
-AMBER_RETURN = 125_000  # Amber returning tokens before Binance due date
 BINANCE_OBLIGATION = 1_750_000
 BINANCE_DUE_DATE = "2026-04-12"
 FOUNDATION_STAKING_ADDR = "0x715b1ddf5d6da6846eadb72d3d6f9d93148d0bb0"
@@ -167,6 +168,20 @@ def _fetch_staking_logs(topic0):
 
 def fmt(value):
     return f"{value:,.0f}"
+
+
+
+def get_enso_price():
+    data = safe_get(f"{COINGECKO_URL}/simple/price",
+                    params={"ids": "enso", "vs_currencies": "usd"},
+                    headers={"x-cg-demo-api-key": COINGECKO_API_KEY} if COINGECKO_API_KEY else None)
+    if data and "enso" in data:
+        return data["enso"].get("usd")
+    return None
+
+
+def fmt_usd(value):
+    return f"${value:,.0f}"
 
 
 # ── On-chain data functions ──────────────────────────────────────────────────
@@ -395,6 +410,9 @@ def build_message():
     print("Fetching on-chain holdings...")
     h = load_holdings()
 
+    print("Fetching ENSO price...")
+    price = get_enso_price()
+
     print("Computing rewards projection...")
     rewards_proj = load_staking_rewards_projection()
 
@@ -408,6 +426,12 @@ def build_message():
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    def line_item(label, tokens):
+        s = f"  {label + ':':21s} {fmt(tokens)}"
+        if price:
+            s += f"  ({fmt_usd(tokens * price)})"
+        return s
+
     breakdown = [
         ("Liquid (ETH)",      h["liquid"]),
         ("Liquid (BSC)",      h["liquid_bsc"]),
@@ -420,39 +444,46 @@ def build_message():
         ("Market Makers",     h["mm_holdings"]),
     ]
 
+    price_line = f"  ENSO Price: ${price:.4f}" if price else ""
+    holdings_usd = f"  ({fmt_usd(h['total_holdings'] * price)})" if price else ""
+    liquid_usd = f"  ({fmt_usd(h['total_liquid'] * price)})" if price else ""
+
     lines = [
         "<b>ENSO Foundation — Treasury Report</b>",
         today,
+        price_line,
         "",
-        f"<b>Total Holdings:</b>  {fmt(h['total_holdings'])} ENSO",
-        f"<b>Total Liquid:</b>  {fmt(h['total_liquid'])} ENSO",
+        f"<b>Total Holdings:</b>  {fmt(h['total_holdings'])} ENSO{holdings_usd}",
+        f"<b>Total Liquid:</b>  {fmt(h['total_liquid'])} ENSO{liquid_usd}",
         "",
         "<b>Holdings Breakdown:</b>",
     ]
     for label, value in breakdown:
         if value > 0:
-            lines.append(f"  {label + ':':21s} {fmt(value)}")
+            lines.append(line_item(label, value))
 
     if rewards_proj:
         lines.append("")
         lines.append("<b>Expected Staking Rewards (next 3 months):</b>")
         for r in rewards_proj:
-            lines.append(f"  {r['label']}:  {fmt(r['reward'])} ENSO")
+            s = f"  {r['label']}:  {fmt(r['reward'])} ENSO"
+            if price:
+                s += f"  ({fmt_usd(r['reward'] * price)})"
+            lines.append(s)
 
     # Binance Payment section
     vesting_by_due = calculate_vesting_projection(BINANCE_DUE_DATE)
     march_reward = get_march_staking_reward(fdn_share) if fdn_share else 0
     current_liquid = h["total_liquid"]
-    surplus = current_liquid + vesting_by_due + AMBER_RETURN + march_reward - BINANCE_OBLIGATION
+    surplus = current_liquid + vesting_by_due + march_reward - BINANCE_OBLIGATION
 
     lines.append("")
     lines.append(f"<b>Binance Payment (due {BINANCE_DUE_DATE}):</b>")
-    lines.append(f"  {'Owed to Binance:':21s} {fmt(BINANCE_OBLIGATION)}")
-    lines.append(f"  {'Current Liquid:':21s} {fmt(current_liquid)}")
-    lines.append(f"  {'Vesting by due date:':21s} {fmt(vesting_by_due)}")
-    lines.append(f"  {'Amber loan return:':21s} {fmt(AMBER_RETURN)}")
-    lines.append(f"  {'Mar staking rewards:':21s} {fmt(march_reward)}")
-    lines.append(f"  {'Surplus after payment:':21s} {fmt(surplus)}")
+    lines.append(line_item("Owed to Binance", BINANCE_OBLIGATION))
+    lines.append(line_item("Current Liquid", current_liquid))
+    lines.append(line_item("Vesting by due date", vesting_by_due))
+    lines.append(line_item("Mar staking rewards", march_reward))
+    lines.append(line_item("Surplus after payment", surplus))
 
     return "\n".join(lines)
 

@@ -59,7 +59,6 @@ FOUNDATION_WALLETS = {
 BINANCE_OBLIGATION = 1_750_000
 BINANCE_DUE_DATE = "2026-04-12"
 MM_DEFAULTS = {"amber": 431_158, "jpeg": 380_607}
-AMBER_RETURN = 125_000  # Amber returning tokens before Binance due date
 
 # Theoretical circulating supply by year-month (from tokenomics model)
 THEORETICAL_SUPPLY = {
@@ -1167,8 +1166,7 @@ with tabs[0]:
         st.markdown(f"- **Amount:** {BINANCE_OBLIGATION:,.0f} ENSO")
         st.markdown(f"- **Vesting until then:** ~{vesting_proj:,.0f} ENSO")
         st.markdown(f"- **Projected staking rewards:** ~{projected_rewards_total:,.0f} ENSO")
-        st.markdown(f"- **Amber returning:** {AMBER_RETURN:,.0f} ENSO")
-        net_after = total_sellable_adj - BINANCE_OBLIGATION + vesting_proj + AMBER_RETURN
+        net_after = total_sellable_adj - BINANCE_OBLIGATION + vesting_proj
         st.markdown(f"- **Net sellable after obligation:** {net_after:,.0f} ENSO")
 
     with col2:
