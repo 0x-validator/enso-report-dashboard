@@ -57,7 +57,7 @@ FOUNDATION_WALLETS = {
     "vesting_operational_3": {"addr": "0xa3314896ae22caf4bfdcb0bd4c3cabce324d8f3e", "type": "vesting"},
 }
 
-MM_DEFAULTS = {"amber": 431_158, "jpeg": 380_607}
+MM_DEFAULTS = {"amber": 306_158, "jpeg": 380_607}
 BINANCE_OBLIGATION = 1_750_000
 BINANCE_DUE_DATE = "2026-04-12"
 FOUNDATION_STAKING_ADDR = "0x715b1ddf5d6da6846eadb72d3d6f9d93148d0bb0"

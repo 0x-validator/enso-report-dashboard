@@ -58,7 +58,7 @@ FOUNDATION_WALLETS = {
 
 BINANCE_OBLIGATION = 1_750_000
 BINANCE_DUE_DATE = "2026-04-12"
-MM_DEFAULTS = {"amber": 431_158, "jpeg": 380_607}
+MM_DEFAULTS = {"amber": 306_158, "jpeg": 380_607}
 
 # Theoretical circulating supply by year-month (from tokenomics model)
 THEORETICAL_SUPPLY = {
