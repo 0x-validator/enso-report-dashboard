@@ -56,7 +56,17 @@ FOUNDATION_WALLETS = {
 }
 
 MM_DEFAULTS = {"amber": 431_158, "jpeg": 380_607}
+AMBER_RETURN = 125_000  # Amber returning tokens before Binance due date
+BINANCE_OBLIGATION = 1_750_000
+BINANCE_DUE_DATE = "2026-04-12"
 FOUNDATION_STAKING_ADDR = "0x715b1ddf5d6da6846eadb72d3d6f9d93148d0bb0"
+
+VESTING_SCHEDULES = [
+    {"name": "Vesting Contract", "start": 1760434200, "end": 1823506200, "total": 14_605_000},
+    {"name": "Operational 1", "start": 1760434200, "end": 1886578200, "total": 4_020_000},
+    {"name": "Operational 2", "start": 1760434200, "end": 1774690200, "total": 1_230_000},
+    {"name": "Operational 3", "start": 1760434200, "end": 1773394200, "total": 1_750_000},
+]
 
 REWARDS_SCHEDULE = [
     ("2025-11-14", 629532.04), ("2025-12-14", 606812.70), ("2026-01-14", 573129.66),
@@ -300,9 +310,9 @@ def load_holdings():
 
     mm_holdings = sum(MM_DEFAULTS.values())
     results["mm_holdings"] = mm_holdings
-    results["total_sellable"] = (results["liquid"] + results["liquid_bsc"]
-                                  + results["vested_unclaimed"]
-                                  + results["staked_expired"] + results["rewards"])
+    results["total_liquid"] = (results["liquid"] + results["liquid_bsc"]
+                                + results["vested_unclaimed"]
+                                + results["staked_expired"] + results["rewards"])
     results["total_holdings"] = (results["liquid"] + results["liquid_bsc"]
                                   + results["vested_unclaimed"]
                                   + results["locked_vesting"] + results["staked_total"]
@@ -350,10 +360,34 @@ def load_staking_rewards_projection():
             rows.append({
                 "label": dt.strftime("%b %Y"),
                 "reward": reward,
+                "fdn_share": fdn_share,
             })
         return rows
     except Exception:
         return None
+
+
+
+# ── Vesting projection ──────────────────────────────────────────────────────
+def calculate_vesting_projection(target_date_str):
+    target_ts = int(datetime.strptime(target_date_str, "%Y-%m-%d").replace(
+        tzinfo=timezone.utc).timestamp())
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    total = 0
+    for v in VESTING_SCHEDULES:
+        rate = v["total"] / (v["end"] - v["start"])
+        effective_end = min(target_ts, v["end"])
+        if effective_end > now_ts:
+            total += rate * (effective_end - now_ts)
+    return round(total)
+
+
+def get_march_staking_reward(fdn_share):
+    """Get Foundation share of March 2026 staking reward."""
+    for date_str, pool in REWARDS_SCHEDULE:
+        if date_str == "2026-03-14":
+            return round(pool * 0.80 * fdn_share)
+    return 0
 
 
 # ── Build Telegram message ───────────────────────────────────────────────────
@@ -366,9 +400,11 @@ def build_message():
 
     # Add projected staking rewards to total holdings
     expected_rewards_total = 0
+    fdn_share = 0
     if rewards_proj:
         expected_rewards_total = sum(r["reward"] for r in rewards_proj)
         h["total_holdings"] += expected_rewards_total
+        fdn_share = rewards_proj[0].get("fdn_share", 0)
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -389,7 +425,7 @@ def build_message():
         today,
         "",
         f"<b>Total Holdings:</b>  {fmt(h['total_holdings'])} ENSO",
-        f"<b>Total Sellable:</b>  {fmt(h['total_sellable'])} ENSO",
+        f"<b>Total Liquid:</b>  {fmt(h['total_liquid'])} ENSO",
         "",
         "<b>Holdings Breakdown:</b>",
     ]
@@ -402,6 +438,21 @@ def build_message():
         lines.append("<b>Expected Staking Rewards (next 3 months):</b>")
         for r in rewards_proj:
             lines.append(f"  {r['label']}:  {fmt(r['reward'])} ENSO")
+
+    # Binance Payment section
+    vesting_by_due = calculate_vesting_projection(BINANCE_DUE_DATE)
+    march_reward = get_march_staking_reward(fdn_share) if fdn_share else 0
+    current_liquid = h["total_liquid"]
+    surplus = current_liquid + vesting_by_due + AMBER_RETURN + march_reward - BINANCE_OBLIGATION
+
+    lines.append("")
+    lines.append(f"<b>Binance Payment (due {BINANCE_DUE_DATE}):</b>")
+    lines.append(f"  {'Owed to Binance:':21s} {fmt(BINANCE_OBLIGATION)}")
+    lines.append(f"  {'Current Liquid:':21s} {fmt(current_liquid)}")
+    lines.append(f"  {'Vesting by due date:':21s} {fmt(vesting_by_due)}")
+    lines.append(f"  {'Amber loan return:':21s} {fmt(AMBER_RETURN)}")
+    lines.append(f"  {'Mar staking rewards:':21s} {fmt(march_reward)}")
+    lines.append(f"  {'Surplus after payment:':21s} {fmt(surplus)}")
 
     return "\n".join(lines)
 
