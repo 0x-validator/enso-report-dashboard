@@ -397,14 +397,6 @@ def calculate_vesting_projection(target_date_str):
     return round(total)
 
 
-def get_march_staking_reward(fdn_share):
-    """Get Foundation share of March 2026 staking reward."""
-    for date_str, pool in REWARDS_SCHEDULE:
-        if date_str == "2026-03-14":
-            return round(pool * 0.80 * fdn_share)
-    return 0
-
-
 # ── Build Telegram message ───────────────────────────────────────────────────
 def build_message():
     print("Fetching on-chain holdings...")
@@ -418,11 +410,9 @@ def build_message():
 
     # Add projected staking rewards to total holdings
     expected_rewards_total = 0
-    fdn_share = 0
     if rewards_proj:
         expected_rewards_total = sum(r["reward"] for r in rewards_proj)
         h["total_holdings"] += expected_rewards_total
-        fdn_share = rewards_proj[0].get("fdn_share", 0)
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -473,16 +463,14 @@ def build_message():
 
     # Binance Payment section
     vesting_by_due = calculate_vesting_projection(BINANCE_DUE_DATE)
-    march_reward = get_march_staking_reward(fdn_share) if fdn_share else 0
     current_liquid = h["total_liquid"]
-    surplus = current_liquid + vesting_by_due + march_reward - BINANCE_OBLIGATION
+    surplus = current_liquid + vesting_by_due - BINANCE_OBLIGATION
 
     lines.append("")
     lines.append(f"<b>Binance Payment (due {BINANCE_DUE_DATE}):</b>")
     lines.append(line_item("Owed to Binance", BINANCE_OBLIGATION))
     lines.append(line_item("Current Liquid", current_liquid))
     lines.append(line_item("Vesting by due date", vesting_by_due))
-    lines.append(line_item("Mar staking rewards", march_reward))
     lines.append(line_item("Surplus after payment", surplus))
 
     return "\n".join(lines)
