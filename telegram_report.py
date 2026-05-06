@@ -53,20 +53,14 @@ FOUNDATION_WALLETS = {
     "vesting_contract": {"addr": "0x4110d73ff4d4fe45af2762df2205ad95c8c9679b", "type": "vesting"},
     "operational": {"addr": "0xd782d294bc3e8b1a32ec9283b02893fd932d3ece", "type": "liquid"},
     "vesting_operational_1": {"addr": "0x3dea6f0f4d3fcd9a706e8b6b0750ab2f57dec17a", "type": "vesting"},
-    "vesting_operational_2": {"addr": "0x332e5b70e451bdeebd36b5d3442827aa52a42f80", "type": "vesting"},
-    "vesting_operational_3": {"addr": "0xa3314896ae22caf4bfdcb0bd4c3cabce324d8f3e", "type": "vesting"},
 }
 
 MM_DEFAULTS = {"amber": 306_158, "jpeg": 380_607}
-BINANCE_OBLIGATION = 1_750_000
-BINANCE_DUE_DATE = "2026-04-12"
 FOUNDATION_STAKING_ADDR = "0x715b1ddf5d6da6846eadb72d3d6f9d93148d0bb0"
 
 VESTING_SCHEDULES = [
     {"name": "Vesting Contract", "start": 1760434200, "end": 1823506200, "total": 14_605_000},
     {"name": "Operational 1", "start": 1760434200, "end": 1886578200, "total": 4_020_000},
-    {"name": "Operational 2", "start": 1760434200, "end": 1774690200, "total": 1_230_000},
-    {"name": "Operational 3", "start": 1760434200, "end": 1773394200, "total": 1_750_000},
 ]
 
 REWARDS_SCHEDULE = [
@@ -292,6 +286,37 @@ def get_all_position_rewards(position_ids):
     return {pid: 0.0 for pid in position_ids}
 
 
+def get_contract_unclaimed_rewards():
+    """Foundation's share of unclaimed staking rewards from staking contract balance."""
+    contract_balance = get_token_balance(STAKING_CONTRACT)
+    if contract_balance <= 0:
+        return 0
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    pos_df = None
+    for c in [
+        os.path.join(script_dir, "enso_positions.csv"),
+        os.path.join(script_dir, "..", "Staking", "enso_positions.csv"),
+    ]:
+        if os.path.exists(c):
+            try:
+                pos_df = pd.read_csv(c)
+                break
+            except Exception:
+                pass
+    if pos_df is None:
+        return 0
+    total_deposited = pos_df["net_deposited"].sum()
+    unclaimed = contract_balance - total_deposited
+    if unclaimed <= 0:
+        return 0
+    fdn = pos_df[pos_df["owner"].str.lower() == FOUNDATION_STAKING_ADDR.lower()]
+    fdn_stake = fdn["stake"].sum()
+    total_stake = pos_df["stake"].sum()
+    if total_stake == 0:
+        return 0
+    return unclaimed * (fdn_stake / total_stake)
+
+
 # ── Holdings aggregator ──────────────────────────────────────────────────────
 def load_holdings():
     results = {
@@ -322,6 +347,11 @@ def load_holdings():
                 results["rewards"] = total_rewards
                 results["positions"] = positions
         time.sleep(0.2)
+
+    # Contract-balance unclaimed rewards (reliable single Etherscan call)
+    contract_rewards = get_contract_unclaimed_rewards()
+    if contract_rewards > results["rewards"]:
+        results["rewards"] = contract_rewards
 
     mm_holdings = sum(MM_DEFAULTS.values())
     results["mm_holdings"] = mm_holdings
@@ -380,21 +410,6 @@ def load_staking_rewards_projection():
         return rows
     except Exception:
         return None
-
-
-
-# ── Vesting projection ──────────────────────────────────────────────────────
-def calculate_vesting_projection(target_date_str):
-    target_ts = int(datetime.strptime(target_date_str, "%Y-%m-%d").replace(
-        tzinfo=timezone.utc).timestamp())
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-    total = 0
-    for v in VESTING_SCHEDULES:
-        rate = v["total"] / (v["end"] - v["start"])
-        effective_end = min(target_ts, v["end"])
-        if effective_end > now_ts:
-            total += rate * (effective_end - now_ts)
-    return round(total)
 
 
 # ── Build Telegram message ───────────────────────────────────────────────────
@@ -460,18 +475,6 @@ def build_message():
             if price:
                 s += f"  ({fmt_usd(r['reward'] * price)})"
             lines.append(s)
-
-    # Binance Payment section
-    vesting_by_due = calculate_vesting_projection(BINANCE_DUE_DATE)
-    current_liquid = h["total_liquid"]
-    surplus = current_liquid + vesting_by_due - BINANCE_OBLIGATION
-
-    lines.append("")
-    lines.append(f"<b>Binance Payment (due {BINANCE_DUE_DATE}):</b>")
-    lines.append(line_item("Owed to Binance", BINANCE_OBLIGATION))
-    lines.append(line_item("Current Liquid", current_liquid))
-    lines.append(line_item("Vesting by due date", vesting_by_due))
-    lines.append(line_item("Surplus after payment", surplus))
 
     return "\n".join(lines)
 

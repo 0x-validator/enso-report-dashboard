@@ -52,12 +52,9 @@ FOUNDATION_WALLETS = {
     "vesting_contract": {"addr": "0x4110d73ff4d4fe45af2762df2205ad95c8c9679b", "type": "vesting"},
     "operational": {"addr": "0xd782d294bc3e8b1a32ec9283b02893fd932d3ece", "type": "liquid"},
     "vesting_operational_1": {"addr": "0x3dea6f0f4d3fcd9a706e8b6b0750ab2f57dec17a", "type": "vesting"},
-    "vesting_operational_2": {"addr": "0x332e5b70e451bdeebd36b5d3442827aa52a42f80", "type": "vesting"},
-    "vesting_operational_3": {"addr": "0xa3314896ae22caf4bfdcb0bd4c3cabce324d8f3e", "type": "vesting"},
 }
 
-BINANCE_OBLIGATION = 1_750_000
-BINANCE_DUE_DATE = "2026-04-12"
+PROJECTION_END_DATE = "2026-12-31"
 MM_DEFAULTS = {"amber": 306_158, "jpeg": 380_607}
 
 # Theoretical circulating supply by year-month (from tokenomics model)
@@ -80,8 +77,6 @@ THEORETICAL_SUPPLY = {
 VESTING_SCHEDULES = [
     {"name": "Vesting Contract", "start": 1760434200, "end": 1823506200, "total": 14_605_000},
     {"name": "Operational 1", "start": 1760434200, "end": 1886578200, "total": 4_020_000},
-    {"name": "Operational 2", "start": 1760434200, "end": 1774690200, "total": 1_230_000},
-    {"name": "Operational 3", "start": 1760434200, "end": 1773394200, "total": 1_750_000},
 ]
 
 FOUNDATION_STAKING_ADDR = "0x715b1ddf5d6da6846eadb72d3d6f9d93148d0bb0"
@@ -411,7 +406,7 @@ def get_circulating_supply() -> dict:
     return {"circulating": 0, "total": 0}
 
 
-def calculate_vesting_projection(target_date_str: str = "2026-04-12") -> int:
+def calculate_vesting_projection(target_date_str: str = "2026-12-31") -> int:
     target_ts = int(datetime.strptime(target_date_str, "%Y-%m-%d").replace(
         tzinfo=timezone.utc).timestamp())
     now_ts = int(datetime.now(timezone.utc).timestamp())
@@ -1087,7 +1082,7 @@ with st.spinner("Fetching exchange volumes..."):
 
 enso_price = get_enso_price(cg_key)
 supply = get_circulating_supply()
-vesting_proj = calculate_vesting_projection(BINANCE_DUE_DATE)
+vesting_proj = calculate_vesting_projection(PROJECTION_END_DATE)
 staking_rewards = load_staking_rewards()
 now_dt = datetime.now(timezone.utc)
 
@@ -1159,16 +1154,6 @@ with tabs[0]:
         st.markdown(f"**Total Sellable: {total_sellable_adj:,.0f} ENSO**")
         st.caption("Sellable = Liquid (ETH + BSC) + Vested + Staked Expired + Rewards")
 
-        # Binance obligation
-        st.markdown("---")
-        st.markdown("#### Binance Obligation")
-        st.markdown(f"- **Due:** {BINANCE_DUE_DATE}")
-        st.markdown(f"- **Amount:** {BINANCE_OBLIGATION:,.0f} ENSO")
-        st.markdown(f"- **Vesting until then:** ~{vesting_proj:,.0f} ENSO")
-        st.markdown(f"- **Projected staking rewards:** ~{projected_rewards_total:,.0f} ENSO")
-        net_after = total_sellable_adj - BINANCE_OBLIGATION + vesting_proj
-        st.markdown(f"- **Net sellable after obligation:** {net_after:,.0f} ENSO")
-
     with col2:
         st.markdown("#### Holdings Distribution")
         sellable_items = {k: v for k, v in breakdown.items() if v > 0}
@@ -1230,11 +1215,11 @@ with tabs[1]:
         st.markdown("---")
 
     st.markdown("#### Vesting Projection")
-    st.markdown(f"Additional tokens vesting until **{BINANCE_DUE_DATE}**: **{vesting_proj:,.0f} ENSO**")
+    st.markdown(f"Additional tokens vesting until **{PROJECTION_END_DATE}**: **{vesting_proj:,.0f} ENSO**")
 
     proj_rows = []
     now_ts = int(now_dt.timestamp())
-    target_ts = int(datetime.strptime(BINANCE_DUE_DATE, "%Y-%m-%d").replace(
+    target_ts = int(datetime.strptime(PROJECTION_END_DATE, "%Y-%m-%d").replace(
         tzinfo=timezone.utc).timestamp())
     for v in VESTING_SCHEDULES:
         rate = v["total"] / (v["end"] - v["start"])
