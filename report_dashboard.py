@@ -394,9 +394,13 @@ def get_enso_price(cg_key: str) -> float | None:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_circulating_supply() -> dict:
+    try:
+        enso_key = st.secrets["ENSO_API_KEY"]
+    except (KeyError, FileNotFoundError):
+        enso_key = os.getenv("ENSO_API_KEY", "")
     data = safe_get(
         "http://api.enso.finance/api/v1/enso-token/circulating-supply",
-        headers={"Authorization": "Bearer ef341f81-88d2-487d-8b5b-355f5aa99a72"},
+        headers={"Authorization": f"Bearer {enso_key}"},
     )
     if data and data.get("circulatingSupply"):
         return {
