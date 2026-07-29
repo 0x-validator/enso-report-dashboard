@@ -40,11 +40,11 @@ STAKING_CONTRACT = "0x22Ad2a46d317C5eDF6c01fea16d4399C912E9A01"
 DECIMALS = 18
 ETHERSCAN_URL = "https://api.etherscan.io/v2/api"
 GOLDSKY_URL = "https://api.goldsky.com/api/public/project_cmgrrbljx1rpt01wnczmq0ayf/subgraphs/tge/0.0.2/gn"
-RPC_URL = "https://eth.llamarpc.com"
+RPC_URL = "https://ethereum-rpc.publicnode.com"
 BSC_RPC_URL = "https://bsc-dataseed.binance.org/"
 BSC_ENSO_CONTRACT = "0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef"
 MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
-RPC_URLS = [RPC_URL, "https://1rpc.io/eth", "https://cloudflare-eth.com"]
+RPC_URLS = [RPC_URL, "https://eth.drpc.org", "https://1rpc.io/eth"]
 COINGECKO_URL = "https://api.coingecko.com/api/v3"
 
 FOUNDATION_WALLETS = {
@@ -344,8 +344,10 @@ def get_staked_positions(owner: str) -> list[dict]:
     return positions
 
 
-def get_all_position_rewards(position_ids: list[int]) -> dict[int, float]:
-    """Fetch rewards for all positions in a single Multicall3 call."""
+def get_all_position_rewards(position_ids: list[int]) -> dict[int, float] | None:
+    """Fetch rewards for all positions in a single Multicall3 call.
+    Returns None if every RPC fails, so callers can distinguish
+    "fetch failed" from "no rewards"."""
     from eth_abi import encode as abi_encode, decode as abi_decode
 
     if not position_ids:
@@ -380,7 +382,7 @@ def get_all_position_rewards(position_ids: list[int]) -> dict[int, float]:
             return rewards
         except Exception:
             continue
-    return {pid: 0.0 for pid in position_ids}
+    return None
 
 
 def get_enso_price(cg_key: str) -> float | None:
@@ -953,7 +955,7 @@ def load_holdings(api_key: str):
     """Fetch all foundation holdings from on-chain."""
     results = {"liquid": 0, "liquid_bsc": 0, "vested_unclaimed": 0, "locked_vesting": 0,
                "staked_total": 0, "staked_expired": 0, "staked_locked": 0,
-               "rewards": 0, "wallets": {}, "positions": []}
+               "rewards": 0, "rewards_ok": True, "wallets": {}, "positions": []}
 
     for name, info in FOUNDATION_WALLETS.items():
         if info["type"] == "vesting":
@@ -977,6 +979,9 @@ def load_holdings(api_key: str):
             if name == "treasury":
                 positions = get_staked_positions(info["addr"])
                 rewards_map = get_all_position_rewards([p["id"] for p in positions])
+                if rewards_map is None:
+                    results["rewards_ok"] = False
+                    rewards_map = {}
                 total_rewards = 0
                 for p in positions:
                     r = rewards_map.get(p["id"], 0.0)
@@ -1079,6 +1084,9 @@ with st.sidebar:
 # ── Load data ────────────────────────────────────────────────────────────────
 with st.spinner("Fetching on-chain holdings..."):
     holdings = load_holdings(eth_key)
+if not holdings["rewards_ok"]:
+    # Don't pin a failed rewards fetch for the full cache TTL — retry next run.
+    load_holdings.clear()
 
 with st.spinner("Fetching exchange volumes..."):
     spot_vols = load_spot_volumes()
@@ -1099,6 +1107,10 @@ total_sellable_adj = holdings["total_sellable"]
 st.markdown("## ENSO Foundation Report")
 st.caption(f"Generated {now_dt.strftime('%B %d, %Y at %H:%M UTC')}"
            + (f" · ENSO Price: **${enso_price:.4f}**" if enso_price else ""))
+if not holdings["rewards_ok"]:
+    st.warning("Could not fetch claimable staking rewards from any RPC — "
+               "Total Sellable and Total Holdings are understated by the "
+               "unclaimed rewards amount. Refresh to retry.")
 
 # ── KPI row ──────────────────────────────────────────────────────────────────
 k1, k2, k3, k4, k5, k6 = st.columns(6)
@@ -1345,12 +1357,14 @@ with tabs[2]:
         mc1.metric("Total Staked", f"{holdings['staked_total']:,.0f}")
         mc2.metric("Expired (claimable)", f"{holdings['staked_expired']:,.0f}")
         mc3.metric("Locked", f"{holdings['staked_locked']:,.0f}")
-        mc4.metric("Rewards Available", f"{holdings['rewards']:,.0f}")
+        mc4.metric("Rewards Available",
+                   f"{holdings['rewards']:,.0f}" if holdings["rewards_ok"] else "N/A")
 
         pos_df = pd.DataFrame(positions)
         pos_df["status"] = pos_df["is_expired"].apply(lambda x: "Expired" if x else "Locked")
         pos_df["deposit_fmt"] = pos_df["deposit"].apply(lambda x: f"{x:,.0f}")
-        pos_df["rewards_fmt"] = pos_df["rewards"].apply(lambda x: f"{x:,.0f}")
+        pos_df["rewards_fmt"] = (pos_df["rewards"].apply(lambda x: f"{x:,.0f}")
+                                 if holdings["rewards_ok"] else "N/A")
 
         st.dataframe(
             pos_df[["id", "deposit_fmt", "rewards_fmt", "expiry_utc", "status"]].rename(columns={
