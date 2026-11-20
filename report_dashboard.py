@@ -55,7 +55,7 @@ FOUNDATION_WALLETS = {
 }
 
 PROJECTION_END_DATE = "2026-12-31"
-MM_DEFAULTS = {"amber": 306_158, "jpeg": 380_607}
+MM_DEFAULTS = {"jpeg": 231_078}  # market makers (updated 2026-11-20; Amber returned tokens)
 
 # Theoretical circulating supply by year-month (from tokenomics model)
 THEORETICAL_SUPPLY = {
@@ -1072,9 +1072,8 @@ with st.sidebar:
         st.warning("Etherscan API key not configured.")
         st.stop()
 
-    mm_amber = MM_DEFAULTS["amber"]
     mm_jpeg = MM_DEFAULTS["jpeg"]
-    mm_holdings = mm_amber + mm_jpeg
+    mm_holdings = mm_jpeg
 
     st.divider()
     refresh = st.button("🔄 Refresh all data", use_container_width=True)
@@ -1146,13 +1145,12 @@ with tabs[0]:
             "Vested (claimable)": holdings["vested_unclaimed"],
             "Staked (expired)": holdings["staked_expired"],
             "Rewards (claimable)": holdings["rewards"],
-            "MM — Amber": mm_amber,
             "MM — Jpeg": mm_jpeg,
             "Staked (locked)": holdings["staked_locked"],
             "Locked (unvested)": holdings["locked_vesting"],
             "Projected Staking Rewards": projected_rewards_total,
         }
-        non_sellable = {"Staked (locked)", "Locked (unvested)", "MM — Amber",
+        non_sellable = {"Staked (locked)", "Locked (unvested)",
                         "MM — Jpeg", "Projected Staking Rewards"}
         bd_df = pd.DataFrame([
             {"Category": k, "Amount": v, "Sellable": k not in non_sellable}

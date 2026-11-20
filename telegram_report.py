@@ -55,7 +55,7 @@ FOUNDATION_WALLETS = {
     "vesting_operational_1": {"addr": "0x3dea6f0f4d3fcd9a706e8b6b0750ab2f57dec17a", "type": "vesting"},
 }
 
-MM_DEFAULTS = {"amber": 306_158, "jpeg": 380_607}
+MM_DEFAULTS = {"jpeg": 231_078}  # market makers (updated 2026-11-20; Amber returned tokens)
 FOUNDATION_STAKING_ADDR = "0x715b1ddf5d6da6846eadb72d3d6f9d93148d0bb0"
 
 VESTING_SCHEDULES = [
